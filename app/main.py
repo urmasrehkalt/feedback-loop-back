@@ -36,11 +36,38 @@ from app.models import (
 )
 
 
-PROBLEM_RESPONSES = {
+ADMIN_PROBLEM_RESPONSES = {
+    400: {"model": ProblemDetails, "description": "Bad request"},
+    401: {"model": ProblemDetails, "description": "Unauthorized"},
+    404: {"model": ProblemDetails, "description": "Resource not found"},
+    409: {"model": ProblemDetails, "description": "Conflict"},
+    422: {"model": ProblemDetails, "description": "Validation error"},
+}
+
+
+PUBLIC_PROBLEM_RESPONSES = {
     400: {"model": ProblemDetails, "description": "Bad request"},
     404: {"model": ProblemDetails, "description": "Resource not found"},
     409: {"model": ProblemDetails, "description": "Conflict"},
     422: {"model": ProblemDetails, "description": "Validation error"},
+}
+
+
+PUBLIC_PATH_PREFIXES = (
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/health",
+    "/surveys/slug/",
+)
+
+
+PUBLIC_PATHS = {
+    "/docs",
+    "/docs/oauth2-redirect",
+    "/redoc",
+    "/openapi.json",
+    "/health",
 }
 
 
@@ -62,6 +89,17 @@ def to_problem(status_code: int, title: str, detail: str, instance: Optional[str
     )
 
 
+def is_public_request_path(path: str) -> bool:
+    return path in PUBLIC_PATHS or path.startswith(PUBLIC_PATH_PREFIXES)
+
+
+def is_valid_admin_token(authorization_header: Optional[str]) -> bool:
+    if not authorization_header or not authorization_header.startswith("Bearer "):
+        return False
+    token = authorization_header[len("Bearer ") :].strip()
+    return bool(settings.admin_bearer_token) and token == settings.admin_bearer_token
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
@@ -73,6 +111,22 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+@app.middleware("http")
+async def admin_auth_middleware(request: Request, call_next):
+    if is_public_request_path(request.url.path):
+        return await call_next(request)
+
+    if is_valid_admin_token(request.headers.get("Authorization")):
+        return await call_next(request)
+
+    return to_problem(
+        status.HTTP_401_UNAUTHORIZED,
+        "Unauthorized",
+        "Admin endpoints require a valid bearer token.",
+        str(request.url),
+    )
 
 
 @app.exception_handler(HTTPException)
@@ -317,7 +371,7 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/organizations", response_model=OrganizationList, tags=["Organizations"], responses=PROBLEM_RESPONSES)
+@app.get("/organizations", response_model=OrganizationList, tags=["Organizations"], responses=ADMIN_PROBLEM_RESPONSES)
 def list_organizations(page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100)) -> OrganizationList:
     organizations = [Organization(**item) for item in STATE["organizations"].values()]
     organizations.sort(key=lambda item: item.createdAt, reverse=True)
@@ -329,7 +383,7 @@ def list_organizations(page: int = Query(default=1, ge=1), pageSize: int = Query
     response_model=Organization,
     status_code=status.HTTP_201_CREATED,
     tags=["Organizations"],
-    responses=PROBLEM_RESPONSES,
+    responses=ADMIN_PROBLEM_RESPONSES,
 )
 def create_organization(payload: OrganizationCreate) -> Organization:
     ensure_unique_slug(STATE["organizations"], payload.slug)
@@ -346,12 +400,12 @@ def create_organization(payload: OrganizationCreate) -> Organization:
     return Organization(**item)
 
 
-@app.get("/organizations/{organizationId}", response_model=Organization, tags=["Organizations"], responses=PROBLEM_RESPONSES)
+@app.get("/organizations/{organizationId}", response_model=Organization, tags=["Organizations"], responses=ADMIN_PROBLEM_RESPONSES)
 def get_organization(organizationId: UUID) -> Organization:
     return Organization(**get_organization_or_404(organizationId))
 
 
-@app.patch("/organizations/{organizationId}", response_model=Organization, tags=["Organizations"], responses=PROBLEM_RESPONSES)
+@app.patch("/organizations/{organizationId}", response_model=Organization, tags=["Organizations"], responses=ADMIN_PROBLEM_RESPONSES)
 def update_organization(organizationId: UUID, payload: OrganizationUpdate) -> Organization:
     organization = get_organization_or_404(organizationId)
     update_data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
@@ -362,7 +416,7 @@ def update_organization(organizationId: UUID, payload: OrganizationUpdate) -> Or
     return Organization(**organization)
 
 
-@app.get("/surveys", response_model=SurveyList, tags=["Surveys"], responses=PROBLEM_RESPONSES)
+@app.get("/surveys", response_model=SurveyList, tags=["Surveys"], responses=ADMIN_PROBLEM_RESPONSES)
 def list_surveys(
     page: int = Query(default=1, ge=1),
     pageSize: int = Query(default=20, ge=1, le=100),
@@ -382,7 +436,7 @@ def list_surveys(
     return SurveyList(items=paginate(surveys, page, pageSize), page=page, pageSize=pageSize, total=len(surveys))
 
 
-@app.post("/surveys", response_model=Survey, status_code=status.HTTP_201_CREATED, tags=["Surveys"], responses=PROBLEM_RESPONSES)
+@app.post("/surveys", response_model=Survey, status_code=status.HTTP_201_CREATED, tags=["Surveys"], responses=ADMIN_PROBLEM_RESPONSES)
 def create_survey(payload: SurveyCreate) -> Survey:
     get_organization_or_404(payload.organizationId)
     ensure_unique_slug(STATE["surveys"], payload.slug)
@@ -409,12 +463,12 @@ def create_survey(payload: SurveyCreate) -> Survey:
     return Survey(**item)
 
 
-@app.get("/surveys/{surveyId}", response_model=Survey, tags=["Surveys"], responses=PROBLEM_RESPONSES)
+@app.get("/surveys/{surveyId}", response_model=Survey, tags=["Surveys"], responses=ADMIN_PROBLEM_RESPONSES)
 def get_survey(surveyId: UUID) -> Survey:
     return Survey(**get_survey_or_404(surveyId))
 
 
-@app.patch("/surveys/{surveyId}", response_model=Survey, tags=["Surveys"], responses=PROBLEM_RESPONSES)
+@app.patch("/surveys/{surveyId}", response_model=Survey, tags=["Surveys"], responses=ADMIN_PROBLEM_RESPONSES)
 def update_survey(surveyId: UUID, payload: SurveyUpdate) -> Survey:
     survey = get_survey_or_404(surveyId)
     update_data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
@@ -430,7 +484,7 @@ def update_survey(surveyId: UUID, payload: SurveyUpdate) -> Survey:
     return Survey(**survey)
 
 
-@app.delete("/surveys/{surveyId}", status_code=status.HTTP_204_NO_CONTENT, tags=["Surveys"], responses=PROBLEM_RESPONSES)
+@app.delete("/surveys/{surveyId}", status_code=status.HTTP_204_NO_CONTENT, tags=["Surveys"], responses=ADMIN_PROBLEM_RESPONSES)
 def delete_survey(surveyId: UUID) -> Response:
     survey = get_survey_or_404(surveyId)
     survey["deletedAt"] = utcnow()
@@ -440,13 +494,13 @@ def delete_survey(surveyId: UUID) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.get("/surveys/{surveyId}/questions", response_model=QuestionList, tags=["Questions"], responses=PROBLEM_RESPONSES)
+@app.get("/surveys/{surveyId}/questions", response_model=QuestionList, tags=["Questions"], responses=ADMIN_PROBLEM_RESPONSES)
 def list_questions(surveyId: UUID) -> QuestionList:
     get_survey_or_404(surveyId)
     return QuestionList(items=list_questions_for_survey(surveyId))
 
 
-@app.post("/surveys/{surveyId}/questions", response_model=Question, status_code=status.HTTP_201_CREATED, tags=["Questions"], responses=PROBLEM_RESPONSES)
+@app.post("/surveys/{surveyId}/questions", response_model=Question, status_code=status.HTTP_201_CREATED, tags=["Questions"], responses=ADMIN_PROBLEM_RESPONSES)
 def create_question(surveyId: UUID, payload: QuestionCreate) -> Question:
     get_survey_or_404(surveyId)
     options = [option.model_dump() if hasattr(option, "model_dump") else option.dict() for option in payload.options]
@@ -469,12 +523,12 @@ def create_question(surveyId: UUID, payload: QuestionCreate) -> Question:
     return Question(**item)
 
 
-@app.get("/surveys/{surveyId}/questions/{questionId}", response_model=Question, tags=["Questions"], responses=PROBLEM_RESPONSES)
+@app.get("/surveys/{surveyId}/questions/{questionId}", response_model=Question, tags=["Questions"], responses=ADMIN_PROBLEM_RESPONSES)
 def get_question(surveyId: UUID, questionId: UUID) -> Question:
     return Question(**get_question_or_404(surveyId, questionId))
 
 
-@app.patch("/surveys/{surveyId}/questions/{questionId}", response_model=Question, tags=["Questions"], responses=PROBLEM_RESPONSES)
+@app.patch("/surveys/{surveyId}/questions/{questionId}", response_model=Question, tags=["Questions"], responses=ADMIN_PROBLEM_RESPONSES)
 def update_question(surveyId: UUID, questionId: UUID, payload: QuestionUpdate) -> Question:
     question = get_question_or_404(surveyId, questionId)
     update_data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
@@ -489,14 +543,14 @@ def update_question(surveyId: UUID, questionId: UUID, payload: QuestionUpdate) -
     return Question(**question)
 
 
-@app.delete("/surveys/{surveyId}/questions/{questionId}", status_code=status.HTTP_204_NO_CONTENT, tags=["Questions"], responses=PROBLEM_RESPONSES)
+@app.delete("/surveys/{surveyId}/questions/{questionId}", status_code=status.HTTP_204_NO_CONTENT, tags=["Questions"], responses=ADMIN_PROBLEM_RESPONSES)
 def delete_question(surveyId: UUID, questionId: UUID) -> Response:
     get_question_or_404(surveyId, questionId)
     del STATE["questions"][questionId]
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.get("/surveys/{surveyId}/responses", response_model=ResponseList, tags=["Responses"], responses=PROBLEM_RESPONSES)
+@app.get("/surveys/{surveyId}/responses", response_model=ResponseList, tags=["Responses"], responses=ADMIN_PROBLEM_RESPONSES)
 def list_responses(
     surveyId: UUID,
     page: int = Query(default=1, ge=1),
@@ -517,12 +571,12 @@ def list_responses(
     return ResponseList(items=paginate(responses, page, pageSize), page=page, pageSize=pageSize, total=len(responses))
 
 
-@app.get("/responses/{responseId}", response_model=SurveyResponse, tags=["Responses"], responses=PROBLEM_RESPONSES)
+@app.get("/responses/{responseId}", response_model=SurveyResponse, tags=["Responses"], responses=ADMIN_PROBLEM_RESPONSES)
 def get_response(responseId: UUID) -> SurveyResponse:
     return SurveyResponse(**get_response_or_404(responseId))
 
 
-@app.get("/reports/surveys/{surveyId}/summary", response_model=SurveySummaryReport, tags=["Reports"], responses=PROBLEM_RESPONSES)
+@app.get("/reports/surveys/{surveyId}/summary", response_model=SurveySummaryReport, tags=["Reports"], responses=ADMIN_PROBLEM_RESPONSES)
 def get_survey_summary(surveyId: UUID) -> SurveySummaryReport:
     get_survey_or_404(surveyId)
     questions = list_questions_for_survey(surveyId)
@@ -585,7 +639,7 @@ def get_survey_summary(surveyId: UUID) -> SurveySummaryReport:
     )
 
 
-@app.get("/surveys/slug/{slug}", response_model=SurveyForm, tags=["Survey Access"], responses=PROBLEM_RESPONSES)
+@app.get("/surveys/slug/{slug}", response_model=SurveyForm, tags=["Survey Access"], responses=PUBLIC_PROBLEM_RESPONSES)
 def get_survey_by_slug(slug: str) -> SurveyForm:
     survey = get_accessible_survey_by_slug_or_404(slug)
     return SurveyForm(
@@ -604,7 +658,7 @@ def get_survey_by_slug(slug: str) -> SurveyForm:
     response_model=SurveyResponse,
     status_code=status.HTTP_201_CREATED,
     tags=["Survey Access"],
-    responses=PROBLEM_RESPONSES,
+    responses=PUBLIC_PROBLEM_RESPONSES,
 )
 def submit_survey_response(
     slug: str,
@@ -658,13 +712,14 @@ def custom_openapi() -> Dict[str, Any]:
         routes=app.routes,
     )
     openapi_schema["openapi"] = settings.openapi_version
+    openapi_schema["servers"] = settings.openapi_servers
     openapi_schema.setdefault("components", {})
     openapi_schema["components"].setdefault("securitySchemes", {})
     openapi_schema["components"]["securitySchemes"]["BearerAuth"] = {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "Placeholder admin authentication scheme for a later implementation phase.",
+        "description": "Bearer token used for admin endpoints. Local development defaults to ADMIN_BEARER_TOKEN=local-admin-token.",
     }
 
     for path, methods in openapi_schema.get("paths", {}).items():

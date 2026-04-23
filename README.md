@@ -46,8 +46,27 @@ Generated file path:
 openapi/openapi.json
 ```
 
+Swagger UI servers dropdown uses the OpenAPI server settings:
+
+```text
+OPENAPI_SERVER_URL=http://localhost:8000
+OPENAPI_SERVER_DESCRIPTION=Local development server
+```
+
+Admin endpoints require a bearer token. Local development uses this default token unless you override it:
+
+```text
+ADMIN_BEARER_TOKEN=local-admin-token
+```
+
+Example admin request:
+
+```bash
+curl -H "Authorization: Bearer local-admin-token" http://127.0.0.1:8000/organizations
+```
+
 ## Notes
 
 - Data is stored in memory for the MVP sample.
-- Admin auth is documented as a placeholder `BearerAuth` scheme, but not enforced yet.
+- Admin auth is enforced with the `BearerAuth` scheme.
 - Survey access is available through `/surveys/slug/{slug}` when the survey `isPublic` property is `true`.
