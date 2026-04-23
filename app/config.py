@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 
 def parse_openapi_servers() -> List[Dict[str, Any]]:
-    url = os.getenv("OPENAPI_SERVER_URL", "http://localhost:8000")
+    url = os.getenv("OPENAPI_SERVER_URL", "http://127.0.0.1:8000")
     description = os.getenv("OPENAPI_SERVER_DESCRIPTION", "Local development server")
     return [{"url": url, "description": description}]
 

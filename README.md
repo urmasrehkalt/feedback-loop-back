@@ -17,9 +17,10 @@ This first iteration focuses on:
 ## Run locally
 
 ```bash
+cp .env.example .env
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/uvicorn app.main:app --reload
+.venv/bin/uvicorn app.main:app --reload --env-file .env
 ```
 
 Swagger UI:
@@ -37,6 +38,9 @@ http://127.0.0.1:8000/openapi.json
 Generate a repo copy of the OpenAPI document:
 
 ```bash
+set -a
+source .env
+set +a
 .venv/bin/python scripts/generate_openapi.py
 ```
 
@@ -49,7 +53,7 @@ openapi/openapi.json
 Swagger UI servers dropdown uses the OpenAPI server settings:
 
 ```text
-OPENAPI_SERVER_URL=http://localhost:8000
+OPENAPI_SERVER_URL=http://127.0.0.1:8000
 OPENAPI_SERVER_DESCRIPTION=Local development server
 ```
 
@@ -57,6 +61,12 @@ Admin endpoints require a bearer token. Local development uses this default toke
 
 ```text
 ADMIN_BEARER_TOKEN=local-admin-token
+```
+
+In Swagger UI, click `Authorize` and enter this token value:
+
+```text
+local-admin-token
 ```
 
 Example admin request:

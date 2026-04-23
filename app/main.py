@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import Body, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import settings
 from app.models import (
@@ -63,6 +63,7 @@ PUBLIC_PATH_PREFIXES = (
 
 
 PUBLIC_PATHS = {
+    "/",
     "/docs",
     "/docs/oauth2-redirect",
     "/redoc",
@@ -127,6 +128,11 @@ async def admin_auth_middleware(request: Request, call_next):
         "Admin endpoints require a valid bearer token.",
         str(request.url),
     )
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    return RedirectResponse(url="/docs", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @app.exception_handler(HTTPException)
